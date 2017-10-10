@@ -9,6 +9,7 @@
 
 #define WRITE   1
 #define READ    0
+#define MAXCMD  50
 
 void vesh(void) {
     
@@ -22,15 +23,15 @@ void vesh(void) {
         fgets(cmd, 256, stdin);
 
         // Comando para sair do vesh:
-        if(strcmp(cmd, "sair\n") == 0) {
+        if(strcmp(cmd, "exit\n") == 0) {
             break;
         }
 
         // Array de palavras a esquerda do pipe:
-        char *leftCommands[50];
+        char *leftCommands[MAXCMD];
 
         // Array de palavras a direita do pipe:
-        char *rightCommands[50];
+        char *rightCommands[MAXCMD];
 
         // Trata a linha de comando recebida:
         int pipeFound = parse(cmd, leftCommands, rightCommands);
@@ -46,7 +47,7 @@ void vesh(void) {
 int parse(char *cmd, char *left[], char *right[]) {
 
     // Divide a linha em uma array de strings:
-    char *commands[50];
+    char *commands[MAXCMD];
     int indexCmd = 0;
     commands[indexCmd] = strtok(cmd, " ");
     indexCmd++;
@@ -105,10 +106,12 @@ void execute(char *left[], char *right[], int tPipe) {
 
     // Trata pipe do tipo '|':
     if(tPipe == 1) {
-        int des_p[2];
-        if(pipe(des_p) == -1) {
-          perror("Falha na criacao do pipe.");
-          exit(1);
+
+        // Cria o pipe:
+        int desc[2];
+        if(pipe(desc) == -1) {
+            perror("Falha na criacao do pipe.");
+            exit(1);
         }
 
         if(fork() == 0)
@@ -117,11 +120,11 @@ void execute(char *left[], char *right[], int tPipe) {
             close(STDOUT_FILENO);
 
             // Redireciona saida para o Write end do pipe:
-            dup(des_p[WRITE]);
+            dup(desc[WRITE]);
 
             // Libera os descritores do pipe:
-            close(des_p[WRITE]);
-            close(des_p[READ]);
+            close(desc[WRITE]);
+            close(desc[READ]);
 
             // Executa o comando:
             execvp(left[0], left);
@@ -135,11 +138,11 @@ void execute(char *left[], char *right[], int tPipe) {
             close(STDIN_FILENO);
 
             // Redireciona entrada para o Read end do pipe:
-            dup(des_p[READ]);
+            dup(desc[READ]);
 
             // Libera os descritores do pipe:
-            close(des_p[READ]);
-            close(des_p[WRITE]);
+            close(desc[READ]);
+            close(desc[WRITE]);
 
             // Executa o comando:
             execvp(right[0], right);
@@ -148,9 +151,10 @@ void execute(char *left[], char *right[], int tPipe) {
         }
 
         // Libera os descritores do pipe:
-        close(des_p[WRITE]);
-        close(des_p[READ]);
+        close(desc[WRITE]);
+        close(desc[READ]);
 
+        // Espera pelos processos filhos:
         wait(NULL);
         wait(NULL);
     }
@@ -158,7 +162,9 @@ void execute(char *left[], char *right[], int tPipe) {
     else if(tPipe == 2) {
 
         // Abre arquivo para escrita:
-        int file = open(right[0], O_WRONLY);
+        // O_CREAT: Cria o arquivo se ele nao existir;
+        // 0666:    Permissoes do arquivo.
+        int file = open(right[0], O_CREAT | O_WRONLY, 0666);
 
         if(fork() == 0)
         {
@@ -205,7 +211,7 @@ void execute(char *left[], char *right[], int tPipe) {
         }
 
     }
-    // Se nao, cria apenas um:
+    // Se nao houver pipe, executa apenas um comando:
     else {
         pid_t pid = fork();
 
@@ -213,13 +219,13 @@ void execute(char *left[], char *right[], int tPipe) {
             printf("Fork falhou.\n");
         }
         else if(pid == 0) {
+            // Processo filho executa o comando:
             execvp(left[0], left);
             perror("execvp falhou");
             exit(1);
         }
         else {
-            // Faz o processo pai esperar pelo
-            // processo filho:
+            // Processo pai espera pelo filho:
             wait(NULL);
         }
     }
